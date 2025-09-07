@@ -140,6 +140,52 @@ logger.AddHook(httpHook)
 logger.Error("This log will be sent to remote endpoint")
 ```
 
+### DataDog Integration
+
+```go
+// Send logs to DataDog
+dataDogHook := logx.NewDataDogHook("your-api-key", "us") // regions: us, eu, us3, us5, ap1, gov
+dataDogHook.Source = "my-app"
+dataDogHook.Service = "user-service"
+dataDogHook.Hostname = "server-01"
+dataDogHook.Tags = "env:production,version:1.2.3"
+logger.AddHook(dataDogHook)
+
+logger.WithFields(logx.Fields{"user_id": 123}).Info("User logged in")
+```
+
+### Loggly Integration
+
+```go
+// Send logs to Loggly
+logglyHook := logx.NewLogglyHook("your-token", "http") // token and tag
+logger.AddHook(logglyHook)
+
+logger.Error("This error will be sent to Loggly")
+```
+
+### New Relic Integration
+
+```go
+// Send logs to New Relic
+newRelicHook := logx.NewNewRelicHook("your-license-key", "us") // regions: us, eu, gov
+newRelicHook.Service = "payment-api"
+newRelicHook.Hostname = "api-server-01"
+logger.AddHook(newRelicHook)
+
+logger.WithFields(logx.Fields{"transaction_id": "txn-123"}).Info("Payment processed")
+```
+
+### Atatus Integration
+
+```go
+// Send logs to Atatus
+atatusHook := logx.NewAtatusHook("your-license-key", "my-app")
+logger.AddHook(atatusHook)
+
+logger.WithFields(logx.Fields{"request_id": "req-456"}).Warn("Slow database query")
+```
+
 ### Custom Formatters
 
 ```go
@@ -288,6 +334,33 @@ logger.AddHook(rotationHook)
 ```go
 httpHook := logx.NewHTTPHook("https://logs.example.com/api/v1/logs")
 logger.AddHook(httpHook)
+```
+
+### DataDog Hook
+```go
+dataDogHook := logx.NewDataDogHook("your-api-key", "us")
+dataDogHook.Source = "my-app"
+dataDogHook.Service = "user-service"
+logger.AddHook(dataDogHook)
+```
+
+### Loggly Hook
+```go
+logglyHook := logx.NewLogglyHook("your-token", "production")
+logger.AddHook(logglyHook)
+```
+
+### New Relic Hook
+```go
+newRelicHook := logx.NewNewRelicHook("your-license-key", "us")
+newRelicHook.Service = "api-service"
+logger.AddHook(newRelicHook)
+```
+
+### Atatus Hook
+```go
+atatusHook := logx.NewAtatusHook("your-license-key", "my-app")
+logger.AddHook(atatusHook)
 ```
 
 ## Requirements
