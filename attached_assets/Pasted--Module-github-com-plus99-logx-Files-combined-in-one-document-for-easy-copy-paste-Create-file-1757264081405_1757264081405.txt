@@ -1,0 +1,544 @@
+// Module: github.com/plus99/logx
+// Files combined in one document for easy copy-paste. Create files under /plus99-logx.
+
+// go.mod
+module github.com/plus99/logx
+
+go 1.20
+
+require (
+	github.com/sirupsen/logrus v1.9.0 // indirect (bench)
+	github.com/rs/zerolog v1.29.0 // indirect (bench)
+	gopkg.in/natefinch/lumberjack.v2 v2.0.0
+)
+
+// logger.go
+package logx
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"runtime"
+	"sync"
+	"time"
+)
+
+// Level represents logging severity
+type Level int
+
+const (
+	TraceLevel Level = iota
+	DebugLevel
+	InfoLevel
+	WarnLevel
+	ErrorLevel
+	PanicLevel
+	FatalLevel
+)
+
+func (l Level) String() string {
+	switch l {
+	case TraceLevel:
+		return "TRACE"
+	case DebugLevel:
+		return "DEBUG"
+	case InfoLevel:
+		return "INFO"
+	case WarnLevel:
+		return "WARN"
+	case ErrorLevel:
+		return "ERROR"
+	case PanicLevel:
+		return "PANIC"
+	case FatalLevel:
+		return "FATAL"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// Fields for structured logging
+type Fields map[string]interface{}
+
+// Entry is the log record
+type Entry struct {
+	Time      time.Time       `json:"time"`
+	Level     string          `json:"level"`
+	Msg       string          `json:"msg"`
+	Fields    Fields          `json:"fields,omitempty"`
+	Caller    string          `json:"caller,omitempty"`
+	TraceID   string          `json:"trace_id,omitempty"`
+	SpanID    string          `json:"span_id,omitempty"`
+}
+
+// Encoder formats an entry into a byte slice
+type Encoder interface {
+	Encode(e *Entry) ([]byte, error)
+}
+
+// Hook is a function called with an entry for side-effects
+type Hook interface {
+	Fire(e *Entry)
+}
+
+// HookFunc adapter
+type HookFunc func(e *Entry)
+
+func (f HookFunc) Fire(e *Entry) { f(e) }
+
+// Logger is the core logger
+type Logger struct {
+	mu           sync.RWMutex
+	out          io.Writer
+	encoder      Encoder
+	level        Level
+	hooks        []Hook
+	withFields   Fields
+	reportCaller bool
+	pool         sync.Pool
+}
+
+var std = New()
+
+// New creates a new logger with defaults
+func New() *Logger {
+	l := &Logger{
+		out:     os.Stdout,
+		encoder: JSONFormatter{TimestampFormat: time.RFC3339Nano},
+		level:   InfoLevel,
+		withFields: make(Fields),
+		pool: sync.Pool{
+			New: func() interface{} { return new(Entry) },
+		},
+	}
+	return l
+}
+
+// Setters for global
+func SetOutput(w io.Writer) { std.SetOutput(w) }
+func SetEncoder(e Encoder) { std.SetEncoder(e) }
+func SetLevel(l Level) { std.SetLevel(l) }
+func SetReportCaller(b bool) { std.SetReportCaller(b) }
+func AddHook(h Hook) { std.AddHook(h) }
+
+// Methods
+func (l *Logger) SetOutput(w io.Writer) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.out = w
+}
+
+func (l *Logger) SetEncoder(e Encoder) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.encoder = e
+}
+
+func (l *Logger) SetLevel(lv Level) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.level = lv
+}
+
+func (l *Logger) SetReportCaller(b bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.reportCaller = b
+}
+
+func (l *Logger) AddHook(h Hook) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.hooks = append(l.hooks, h)
+}
+
+// WithFields returns a derived logger with additional fields
+func (l *Logger) WithFields(f Fields) *Logger {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	newFields := make(Fields, len(l.withFields)+len(f))
+	for k, v := range l.withFields {
+		newFields[k] = v
+	}
+	for k, v := range f {
+		newFields[k] = v
+	}
+	return &Logger{
+		out:          l.out,
+		encoder:      l.encoder,
+		level:        l.level,
+		hooks:        l.hooks,
+		withFields:   newFields,
+		reportCaller: l.reportCaller,
+		pool:         l.pool,
+	}
+}
+
+// WithContext extracts trace/span IDs from context and returns derived logger
+func (l *Logger) WithContext(ctx context.Context) *Logger {
+	flds := Fields{}
+	if ctx == nil {
+		return l.WithFields(flds)
+	}
+	if tid := ctx.Value(contextKey("trace_id")); tid != nil {
+		flds["trace_id"] = tid
+	}
+	if sid := ctx.Value(contextKey("span_id")); sid != nil {
+		flds["span_id"] = sid
+	}
+	return l.WithFields(flds)
+}
+
+// helper to capture caller
+func (l *Logger) caller() string {
+	// skip 3 frames to get to the caller of public API
+	pc, file, line, ok := runtime.Caller(3)
+	if !ok {
+		return ""
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return fmt.Sprintf("%s:%d", file, line)
+	}
+	return fmt.Sprintf("%s:%d %s", file, line, fn.Name())
+}
+
+func (l *Logger) log(level Level, msg string, f Fields) {
+	l.mu.RLock()
+	if level < l.level {
+		l.mu.RUnlock()
+		return
+	}
+	encoder := l.encoder
+	out := l.out
+	hooks := append([]Hook(nil), l.hooks...)
+	reportCaller := l.reportCaller
+	baseFields := l.withFields
+	l.mu.RUnlock()
+
+	// build entry
+	ent := l.pool.Get().(*Entry)
+	ent.Time = time.Now()
+	ent.Level = level.String()
+	ent.Msg = msg
+	// merge fields
+	fields := make(Fields, len(baseFields)+len(f))
+	for k, v := range baseFields {
+		fields[k] = v
+	}
+	for k, v := range f {
+		fields[k] = v
+	}
+	ent.Fields = fields
+	if reportCaller {
+		ent.Caller = l.caller()
+	}
+	// run hooks (non-blocking best-effort)
+	for _, h := range hooks {
+		// run sync for now, hooks can dispatch async themselves
+		h.Fire(ent)
+	}
+	b, err := encoder.Encode(ent)
+	if err == nil {
+		// ensure trailing newline
+		if len(b) == 0 || b[len(b)-1] != '\n' {
+			b = append(b, '\n')
+		}
+		out.Write(b)
+	} else {
+		fmt.Fprintf(os.Stderr, "logx: encode error: %v\n", err)
+	}
+
+	// release entry
+	ent.Time = time.Time{}
+	ent.Level = ""
+	ent.Msg = ""
+	ent.Fields = nil
+	ent.Caller = ""
+	ent.TraceID = ""
+	ent.SpanID = ""
+	l.pool.Put(ent)
+}
+
+// Convenience methods
+func (l *Logger) Info(msg string)                     { l.log(InfoLevel, msg, nil) }
+func (l *Logger) Infof(format string, args ...any)    { l.log(InfoLevel, fmt.Sprintf(format, args...), nil) }
+func (l *Logger) Warn(msg string)                     { l.log(WarnLevel, msg, nil) }
+func (l *Logger) Error(msg string)                    { l.log(ErrorLevel, msg, nil) }
+func (l *Logger) Debug(msg string)                    { l.log(DebugLevel, msg, nil) }
+func (l *Logger) Fatal(msg string)                    { l.log(FatalLevel, msg, nil); os.Exit(1) }
+func (l *Logger) Panic(msg string)                    { l.log(PanicLevel, msg, nil); panic(msg) }
+
+// Global wrappers
+func WithFields(f Fields) *Logger { return std.WithFields(f) }
+func WithContext(ctx context.Context) *Logger { return std.WithContext(ctx) }
+func Info(msg string) { std.Info(msg) }
+func Warn(msg string) { std.Warn(msg) }
+func Error(msg string) { std.Error(msg) }
+func Debug(msg string) { std.Debug(msg) }
+func Fatal(msg string) { std.Fatal(msg) }
+
+// encoder.go
+package logx
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+)
+
+// JSONFormatter implements Encoder
+type JSONFormatter struct {
+	TimestampFormat string
+}
+
+func (f JSONFormatter) Encode(e *Entry) ([]byte, error) {
+	// Ensure fields deterministic order for tests
+	out := make(map[string]interface{})
+	out["time"] = e.Time.Format(f.TimestampFormat)
+	out["level"] = e.Level
+	out["msg"] = e.Msg
+	if len(e.Fields) > 0 {
+		// Copy fields
+		m := make(map[string]interface{}, len(e.Fields))
+		for k, v := range e.Fields {
+			m[k] = v
+		}
+		out["fields"] = m
+	}
+	if e.Caller != "" {
+		out["caller"] = e.Caller
+	}
+	if e.TraceID != "" {
+		out["trace_id"] = e.TraceID
+	}
+	if e.SpanID != "" {
+		out["span_id"] = e.SpanID
+	}
+	return json.Marshal(out)
+}
+
+// ConsoleFormatter produces human-friendly lines
+type ConsoleFormatter struct {
+	FullTimestamp bool
+	WithColors    bool
+}
+
+func (f ConsoleFormatter) Encode(e *Entry) ([]byte, error) {
+	var buf bytes.Buffer
+	if f.FullTimestamp {
+		buf.WriteString(e.Time.Format(time.RFC3339))
+	} else {
+		buf.WriteString(e.Time.Format("15:04:05"))
+	}
+	buf.WriteString(" ")
+	buf.WriteString("[")
+	buf.WriteString(e.Level)
+	buf.WriteString("] ")
+	buf.WriteString(e.Msg)
+	if len(e.Fields) > 0 {
+		// deterministic order
+		keys := make([]string, 0, len(e.Fields))
+		for k := range e.Fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		pairs := make([]string, 0, len(keys))
+		for _, k := range keys {
+			pairs = append(pairs, fmt.Sprintf("%s=%v", k, e.Fields[k]))
+		}
+		buf.WriteString(" ")
+		buf.WriteString(strings.Join(pairs, " "))
+	}
+	if e.Caller != "" {
+		buf.WriteString(" ")
+		buf.WriteString("(" + e.Caller + ")")
+	}
+	return buf.Bytes(), nil
+}
+
+// hooks.go
+package logx
+
+import (
+	"bufio"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+// FileHook writes logs to a file (append). It is a simple hook; for rotation use RotationHook.
+type FileHook struct {
+	w *os.File
+	bw *bufio.Writer
+}
+
+func NewFileHook(path string) (*FileHook, error) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &FileHook{w: f, bw: bufio.NewWriter(f)}, nil
+}
+
+func (h *FileHook) Fire(e *Entry) {
+	b, err := JSONFormatter{TimestampFormat: time.RFC3339Nano}.Encode(e)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "filehook encode err: %v\n", err)
+		return
+	}
+	h.bw.Write(b)
+	h.bw.WriteByte('\n')
+	h.bw.Flush()
+}
+
+// HTTPHook - for Loki-like or generic HTTP ingestion
+type HTTPHook struct {
+	Endpoint string
+	Client   *http.Client
+}
+
+func NewHTTPHook(endpoint string) *HTTPHook {
+	return &HTTPHook{Endpoint: endpoint, Client: &http.Client{Timeout: 5 * time.Second}}
+}
+
+func (h *HTTPHook) Fire(e *Entry) {
+	b, err := JSONFormatter{TimestampFormat: time.RFC3339Nano}.Encode(e)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "httphook encode err: %v\n", err)
+		return
+	}
+	req, _ := http.NewRequest("POST", h.Endpoint, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.Client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "httphook send err: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+// RotationHook integrates lumberjack for rotation
+package logx
+
+import (
+	"gopkg.in/natefinch/lumberjack.v2"
+)
+
+type RotationHook struct {
+	lj *lumberjack.Logger
+}
+
+func NewRotationHook(path string, maxSizeMB, maxBackups int, maxAgeDays int) *RotationHook {
+	lj := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    maxSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAgeDays,
+		Compress:   false,
+	}
+	return &RotationHook{lj: lj}
+}
+
+func (h *RotationHook) Fire(e *Entry) {
+	b, err := JSONFormatter{TimestampFormat: time.RFC3339Nano}.Encode(e)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "rotationhook encode err: %v\n", err)
+		return
+	}
+	h.lj.Write(append(b, '\n'))
+}
+
+// context.go
+package logx
+
+import (
+	"context"
+)
+
+type contextKey string
+
+func contextWithIDs(ctx context.Context, traceID, spanID string) context.Context {
+	ctx = context.WithValue(ctx, contextKey("trace_id"), traceID)
+	ctx = context.WithValue(ctx, contextKey("span_id"), spanID)
+	return ctx
+}
+
+func ContextWithTraceSpan(ctx context.Context, traceID, spanID string) context.Context {
+	return contextWithIDs(ctx, traceID, spanID)
+}
+
+// bench_test.go
+package logx_test
+
+import (
+	"context"
+	"testing"
+	"github.com/plus99/logx"
+	logrus "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"os"
+)
+
+func BenchmarkLogxInfo(b *testing.B) {
+	l := logx.New()
+	l.SetLevel(logx.InfoLevel)
+	l.SetEncoder(logx.JSONFormatter{TimestampFormat: "2006-01-02T15:04:05.000Z07:00"})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		l.WithFields(logx.Fields{"n": i, "user": "u"}).Info("bench")
+	}
+}
+
+func BenchmarkLogrusInfo(b *testing.B) {
+	logrus.SetOutput(os.Stdout)
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetLevel(logrus.InfoLevel)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		logrus.WithFields(logrus.Fields{"n": i, "user": "u"}).Info("bench")
+	}
+}
+
+func BenchmarkZerologInfo(b *testing.B) {
+	w := os.Stdout
+	logger := zerolog.New(w).With().Timestamp().Logger()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		logger.Info().Int("n", i).Str("user", "u").Msg("bench")
+	}
+}
+
+
+// README (short)
+// usage example
+// main.go
+package main
+
+import (
+	"context"
+	"github.com/plus99/logx"
+	"time"
+)
+
+func main() {
+	l := logx.New()
+	l.SetEncoder(logx.ConsoleFormatter{FullTimestamp: true, WithColors: false})
+	l.SetLevel(logx.InfoLevel)
+	l.SetReportCaller(true)
+	// rotation hook
+	h := logx.NewRotationHook("app.log", 50, 7, 30)
+	l.AddHook(h)
+
+	ctx := logx.ContextWithTraceSpan(context.Background(), "trace-123", "span-1")
+	lg := l.WithContext(ctx)
+	lg.WithFields(logx.Fields{"animal": "walrus", "size": 10}).Info("A group of walrus emerges from the ocean")
+
+	// give hooks time to flush if async
+	time.Sleep(100 * time.Millisecond)
+}
