@@ -18,9 +18,9 @@ args = "LogX Demo"
 name = "LogX Demo"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd plus99-logx && go run cmd/example/main.go"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run tests/example/main.go"
