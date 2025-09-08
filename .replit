@@ -23,4 +23,4 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "go run tests/example/redaction_demo.go"
+args = "go run cmd/example/redaction_demo.go"
