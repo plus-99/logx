@@ -19,7 +19,7 @@ func main() {
 
         ctx := logx.ContextWithTraceSpan(context.Background(), "trace-123", "span-1")
         lg := l.WithContext(ctx)
-        lg.WithFields(logx.Fields{"animal": "walrus", "size": 10}).Info("A group of walrus emerges from the ocean")
+        lg.WithFields(logx.Fields{"service": "database", "connections": 10}).Info("Database connection pool initialized successfully")
 
         // Test different log levels
         logx.Info("This is an info message")
