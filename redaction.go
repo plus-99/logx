@@ -74,26 +74,18 @@ var (
         messageRedactors     = make([]MessageRedactorFunc, 0)
 )
 
-// Built-in regex patterns for common sensitive data
-var builtInPatterns = []*regexp.Regexp{
-        // Credit Card Numbers (basic patterns)
-        regexp.MustCompile(`\b(?:\d{4}[-\s]?){3}\d{4}\b`),
-        // Social Security Numbers
-        regexp.MustCompile(`\b\d{3}-?\d{2}-?\d{4}\b`),
-        // API Keys (common patterns)
-        regexp.MustCompile(`(?i)(?:api[_-]?key|apikey|token|secret)=[\w\-_]{8,}`),
-        regexp.MustCompile(`(?i)bearer\s+[\w\-_\.]{20,}`),
-        // Email addresses
-        regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`),
-        // AWS Access Keys
-        regexp.MustCompile(`(?i)AKIA[0-9A-Z]{16}`),
-        // Private Keys (PEM format headers)
-        regexp.MustCompile(`-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----`),
-        // Common password patterns
-        regexp.MustCompile(`(?i)password=[\w\-_!@#$%^&*()]{4,}`),
-}
+// Built-in compiled regex patterns for common sensitive data
+// Patterns are loaded from patterns.go for easier maintenance
+var builtInPatterns []*regexp.Regexp
 
 func init() {
+        // Compile built-in patterns from patterns.go
+        builtInPatterns = make([]*regexp.Regexp, 0, len(BuiltInPatterns))
+        for _, pattern := range BuiltInPatterns {
+                compiled := regexp.MustCompile(pattern)
+                builtInPatterns = append(builtInPatterns, compiled)
+        }
+        
         // Initialize built-in redactors
         regexRedactors = append(regexRedactors, builtInPatterns...)
         
