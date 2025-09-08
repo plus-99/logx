@@ -228,7 +228,7 @@ func applyRedaction(fields Fields) Fields {
         
         for key, value := range fields {
                 // Check for SecretString/SecretBytes (always redacted)
-                switch v := value.(type) {
+                switch value.(type) {
                 case SecretString:
                         redacted[key] = "[REDACTED]"
                         continue
