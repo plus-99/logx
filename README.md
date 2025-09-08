@@ -9,6 +9,7 @@ LogX is a fast, lightweight, and feature-rich logging library for Go application
 - **🎯 Multiple Log Levels**: TRACE, DEBUG, INFO, WARN, ERROR, PANIC, FATAL
 - **🔄 Multiple Output Formats**: JSON and human-readable console formats
 - **🪝 Extensible Hooks**: Built-in file, HTTP, rotation, DataDog, Loggly, New Relic, and Atatus hooks
+- **🛡️ Data Protection**: Advanced redaction and sensitive data scanning with customizable rules
 - **🔗 Context Integration**: Extract trace/span IDs from Go context
 - **🔒 Thread-Safe**: Safe for concurrent use across goroutines
 - **📦 Log Rotation**: Integrated with lumberjack for automatic log rotation
@@ -184,6 +185,136 @@ atatusHook := logx.NewAtatusHook("your-license-key", "my-app")
 logger.AddHook(atatusHook)
 
 logger.WithFields(logx.Fields{"request_id": "req-456"}).Warn("Slow database query")
+```
+
+## Redaction & Sensitive Data Protection
+
+LogX provides comprehensive data protection features to automatically detect and redact sensitive information in your logs.
+
+### Secret Wrappers
+
+Always redact sensitive values using secret wrappers:
+
+```go
+// These will always appear as [REDACTED] in logs
+email := logx.NewSecretString("user@company.com")
+password := logx.NewSecretString("supersecret123")
+
+logx.WithFields(logx.Fields{
+    "email":    email,
+    "password": password,
+}).Info("User registration")
+// Output: {"email":"[REDACTED]","password":"[REDACTED]","msg":"User registration"}
+```
+
+### Field-Based Redaction
+
+Automatically redact sensitive field names:
+
+```go
+// Add keys that should always be redacted
+logx.AddKeyRedactor("password", "token", "api_key", "credit_card")
+
+logx.WithFields(logx.Fields{
+    "username":  "john",
+    "password":  "secret123",      // Will be redacted
+    "api_key":   "sk_12345",       // Will be redacted
+}).Info("User login")
+```
+
+### Message Redaction
+
+Scan and redact sensitive data in log messages:
+
+```go
+logx.EnableMessageRedaction(true)
+
+// Built-in patterns automatically detect and redact:
+logx.Info("Processing credit card 4111-1111-1111-1111")  // → "Processing credit card [REDACTED]"
+logx.Info("User SSN: 123-45-6789")                       // → "User SSN: [REDACTED]"
+logx.Info("Login with password=mysecret")                // → "Login with [REDACTED]"
+```
+
+### Custom Redactors
+
+Create custom redaction rules:
+
+```go
+// Custom field redactor
+logx.AddCustomRedactor(func(key string, val interface{}) interface{} {
+    if key == "ssn" {
+        return "[MASKED-SSN]"
+    }
+    return val
+})
+
+// Regex-based redaction
+logx.AddRegexRedactor(`(?i)token=[A-Za-z0-9-_]+`)
+```
+
+### Data Masking Helper
+
+Selectively mask sensitive fields in complex data structures:
+
+```go
+userData := map[string]interface{}{
+    "username": "alice",
+    "password": "secret123",
+    "email":    "alice@example.com",
+}
+
+maskedData := logx.Mask(userData, []string{"password", "email"})
+logx.WithFields(logx.Fields{"user": maskedData}).Info("Profile update")
+// Output: {"user":{"username":"alice","password":"[REDACTED]","email":"[REDACTED]"}}
+```
+
+### Per-Logger Redaction Control
+
+Enable/disable redaction per logger instance:
+
+```go
+// Global setting
+logx.EnableRedaction(true)   // Enable globally
+
+// Per-logger override (useful for development)
+devLogger := logger.WithRedaction(false)  // Disable for this logger
+devLogger.WithFields(logx.Fields{
+    "debug_token": "actual_token_value",   // Will show actual value
+}).Info("Debug info")
+
+// Regular logger still follows global setting
+logger.WithFields(logx.Fields{
+    "token": "secret_token",               // Will be redacted
+}).Info("Production log")
+```
+
+### Built-in Redaction Patterns
+
+LogX automatically detects and redacts common sensitive data patterns:
+
+- **Credit Card Numbers**: `4111-1111-1111-1111`
+- **Social Security Numbers**: `123-45-6789`
+- **Email Addresses**: `user@example.com`
+- **API Keys & Tokens**: `apikey=sk_12345`, `Bearer abc123`
+- **AWS Access Keys**: `AKIAIOSFODNN7EXAMPLE`
+- **Private Key Headers**: `-----BEGIN RSA PRIVATE KEY-----`
+- **Password Patterns**: `password=secret123`
+
+### Environment-Based Configuration
+
+Configure redaction based on your environment:
+
+```go
+import "os"
+
+func init() {
+    // Enable redaction in production, disable in development
+    if os.Getenv("ENV") == "production" {
+        logx.EnableRedaction(true)
+    } else {
+        logx.EnableRedaction(false)
+    }
+}
 ```
 
 ### Custom Formatters
