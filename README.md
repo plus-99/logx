@@ -18,7 +18,7 @@ LogX is a fast, lightweight, and feature-rich logging library for Go application
 ## Installation
 
 ```bash
-go get github.com/plus99/logx
+go get github.com/plus-99/logx
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ go get github.com/plus99/logx
 package main
 
 import (
-    "github.com/plus99/logx"
+    "github.com/plus-99/logx"
 )
 
 func main() {
@@ -53,25 +53,25 @@ func main() {
 package main
 
 import (
-    "github.com/plus99/logx"
+    "github.com/plus-99/logx"
 )
 
 func main() {
     // Create a new logger
     logger := logx.New()
-    
+
     // Set log level
     logger.SetLevel(logx.InfoLevel)
-    
+
     // Use console formatter for human-readable output
     logger.SetEncoder(logx.ConsoleFormatter{
         FullTimestamp: true,
         WithColors: false,
     })
-    
+
     // Enable caller information
     logger.SetReportCaller(true)
-    
+
     logger.Info("Logger configured successfully")
 }
 ```
@@ -96,7 +96,7 @@ logger.WithFields(logx.Fields{"endpoint": "/users"}).Info("Handling request")
 ```go
 import (
     "context"
-    "github.com/plus99/logx"
+    "github.com/plus-99/logx"
 )
 
 // Add trace/span IDs to context
@@ -112,12 +112,12 @@ logger.Info("Processing request")
 
 ```go
 import (
-    "github.com/plus99/logx"
+    "github.com/plus-99/logx"
 )
 
 func main() {
     logger := logx.New()
-    
+
     // Add file rotation hook
     rotationHook := logx.NewRotationHook(
         "app.log",  // filename
@@ -126,7 +126,7 @@ func main() {
         30,         // max age in days
     )
     logger.AddHook(rotationHook)
-    
+
     logger.Info("This will be written to app.log with rotation")
 }
 ```

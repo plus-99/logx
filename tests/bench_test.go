@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/plus99/logx"
-	logrus "github.com/sirupsen/logrus"
+	"github.com/plus-99/logx"
 	"github.com/rs/zerolog"
+	logrus "github.com/sirupsen/logrus"
 )
 
 func BenchmarkLogxInfo(b *testing.B) {

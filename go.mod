@@ -1,4 +1,4 @@
-module github.com/plus99/logx
+module github.com/plus-99/logx
 
 go 1.19
 

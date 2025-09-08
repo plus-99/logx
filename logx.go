@@ -1,7 +1,7 @@
 package logx
 
 import (
-        "github.com/plus99/logx/internal"
+	"github.com/plus-99/logx/internal"
 )
 
 // Re-export all public types from internal package
@@ -11,13 +11,13 @@ type Level = internal.Level
 
 // Log levels
 const (
-        TraceLevel = internal.TraceLevel
-        DebugLevel = internal.DebugLevel
-        InfoLevel  = internal.InfoLevel
-        WarnLevel  = internal.WarnLevel
-        ErrorLevel = internal.ErrorLevel
-        PanicLevel = internal.PanicLevel
-        FatalLevel = internal.FatalLevel
+	TraceLevel = internal.TraceLevel
+	DebugLevel = internal.DebugLevel
+	InfoLevel  = internal.InfoLevel
+	WarnLevel  = internal.WarnLevel
+	ErrorLevel = internal.ErrorLevel
+	PanicLevel = internal.PanicLevel
+	FatalLevel = internal.FatalLevel
 )
 
 // Fields for structured logging
