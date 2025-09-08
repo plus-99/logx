@@ -9,7 +9,7 @@ LogX is a fast, lightweight, and feature-rich logging library for Go application
 - **🎯 Multiple Log Levels**: TRACE, DEBUG, INFO, WARN, ERROR, PANIC, FATAL
 - **🔄 Multiple Output Formats**: JSON and human-readable console formats
 - **🪝 Extensible Hooks**: Built-in file, HTTP, rotation, DataDog, Loggly, New Relic, and Atatus hooks
-- **🛡️ Data Protection**: Advanced redaction and sensitive data scanning with customizable rules
+- **🛡️ Redaction & Sensitive Data Protection**: Automatic detection and redaction of sensitive information like passwords, API keys, credit cards, and SSNs
 - **🔗 Context Integration**: Extract trace/span IDs from Go context
 - **🔒 Thread-Safe**: Safe for concurrent use across goroutines
 - **📦 Log Rotation**: Integrated with lumberjack for automatic log rotation
