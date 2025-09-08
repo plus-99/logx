@@ -1,4 +1,4 @@
-package logx
+package internal
 
 import (
         "github.com/plus99/logx/internal/encoding"
